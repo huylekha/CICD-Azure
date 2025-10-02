@@ -1,8 +1,0 @@
-D:\Azure\CICD-Azure\src\Services\NotificationService\obj\Debug\net8.0\NotificationService.csproj.AssemblyReference.cache
-D:\Azure\CICD-Azure\src\Services\NotificationService\obj\Debug\net8.0\NotificationService.GeneratedMSBuildEditorConfig.editorconfig
-D:\Azure\CICD-Azure\src\Services\NotificationService\obj\Debug\net8.0\NotificationService.AssemblyInfoInputs.cache
-D:\Azure\CICD-Azure\src\Services\NotificationService\obj\Debug\net8.0\NotificationService.AssemblyInfo.cs
-D:\Azure\CICD-Azure\src\Services\NotificationService\obj\Debug\net8.0\NotificationService.csproj.CoreCompileInputs.cache
-D:\Azure\CICD-Azure\src\Services\NotificationService\obj\Debug\net8.0\NotificationService.MvcApplicationPartsAssemblyInfo.cs
-D:\Azure\CICD-Azure\src\Services\NotificationService\obj\Debug\net8.0\NotificationService.MvcApplicationPartsAssemblyInfo.cache
-D:\Azure\CICD-Azure\src\Services\NotificationService\obj\Debug\net8.0\NotificationService.sourcelink.json
