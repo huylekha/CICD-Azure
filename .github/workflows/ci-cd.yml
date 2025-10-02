@@ -1,0 +1,248 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+env:
+  AZURE_CONTAINER_REGISTRY: cicdazure.azurecr.io
+  CONTAINER_NAME_PAYMENT: payment-service
+  CONTAINER_NAME_NOTIFICATION: notification-service
+  RESOURCE_GROUP: cicd-azure-dev-rg
+  AKS_CLUSTER: cicd-azure-dev-aks
+
+jobs:
+  terraform-plan:
+    name: Terraform Plan
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_version: 1.6.0
+
+    - name: Terraform Format Check
+      run: terraform fmt -check -recursive
+      working-directory: ./terraform
+
+    - name: Terraform Init
+      run: terraform init
+      working-directory: ./terraform
+      env:
+        ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+        ARM_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+        ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+        ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+
+    - name: Terraform Plan
+      run: terraform plan -var-file="terraform.tfvars"
+      working-directory: ./terraform
+
+  terraform-apply:
+    name: Terraform Apply
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    needs: [build-and-test]
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_version: 1.6.0
+
+    - name: Terraform Init
+      run: terraform init
+      working-directory: ./terraform
+      env:
+        ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+        ARM_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+        ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+        ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+
+    - name: Terraform Apply
+      run: terraform apply -auto-approve -var-file="terraform.tfvars"
+      working-directory: ./terraform
+
+  build-and-test:
+    name: Build and Test
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v3
+      with:
+        dotnet-version: '8.0.x'
+
+    - name: Restore dependencies
+      run: dotnet restore
+
+    - name: Build
+      run: dotnet build --no-restore --configuration Release
+
+    - name: Test
+      run: dotnet test --no-build --configuration Release --verbosity normal --collect:"XPlat Code Coverage"
+
+    - name: Publish test results
+      uses: dorny/test-reporter@v1
+      if: success() || failure()
+      with:
+        name: .NET Tests
+        path: '**/TestResults/*.trx'
+        reporter: dotnet-trx
+
+    - name: Upload coverage reports
+      uses: codecov/codecov-action@v3
+      with:
+        file: '**/coverage.cobertura.xml'
+        flags: unittests
+        name: codecov-umbrella
+
+  build-and-push-images:
+    name: Build and Push Docker Images
+    runs-on: ubuntu-latest
+    needs: [build-and-test]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Azure Login
+      uses: azure/login@v1
+      with:
+        creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+    - name: Login to Azure Container Registry
+      run: az acr login --name ${{ env.AZURE_CONTAINER_REGISTRY }}
+
+    - name: Build and push Payment Service
+      run: |
+        docker build -t ${{ env.AZURE_CONTAINER_REGISTRY }}/${{ env.CONTAINER_NAME_PAYMENT }}:${{ github.sha }} \
+                     -t ${{ env.AZURE_CONTAINER_REGISTRY }}/${{ env.CONTAINER_NAME_PAYMENT }}:latest \
+                     -f src/Services/PaymentService/Dockerfile .
+        docker push ${{ env.AZURE_CONTAINER_REGISTRY }}/${{ env.CONTAINER_NAME_PAYMENT }}:${{ github.sha }}
+        docker push ${{ env.AZURE_CONTAINER_REGISTRY }}/${{ env.CONTAINER_NAME_PAYMENT }}:latest
+
+    - name: Build and push Notification Service
+      run: |
+        docker build -t ${{ env.AZURE_CONTAINER_REGISTRY }}/${{ env.CONTAINER_NAME_NOTIFICATION }}:${{ github.sha }} \
+                     -t ${{ env.AZURE_CONTAINER_REGISTRY }}/${{ env.CONTAINER_NAME_NOTIFICATION }}:latest \
+                     -f src/Services/NotificationService/Dockerfile .
+        docker push ${{ env.AZURE_CONTAINER_REGISTRY }}/${{ env.CONTAINER_NAME_NOTIFICATION }}:${{ github.sha }}
+        docker push ${{ env.AZURE_CONTAINER_REGISTRY }}/${{ env.CONTAINER_NAME_NOTIFICATION }}:latest
+
+  deploy-to-aks:
+    name: Deploy to AKS
+    runs-on: ubuntu-latest
+    needs: [terraform-apply, build-and-push-images]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Azure Login
+      uses: azure/login@v1
+      with:
+        creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+    - name: Get AKS credentials
+      run: az aks get-credentials --resource-group ${{ env.RESOURCE_GROUP }} --name ${{ env.AKS_CLUSTER }} --overwrite-existing
+
+    - name: Install kubectl
+      uses: azure/setup-kubectl@v3
+
+    - name: Deploy Payment Service
+      run: |
+        # Update image tag in deployment
+        sed -i "s|IMAGE_TAG|${{ github.sha }}|g" k8s/payment-service-deployment.yaml
+        kubectl apply -f k8s/payment-service-deployment.yaml
+        kubectl apply -f k8s/payment-service-service.yaml
+        kubectl apply -f k8s/payment-service-ingress.yaml
+
+    - name: Deploy Notification Service
+      run: |
+        # Update image tag in deployment
+        sed -i "s|IMAGE_TAG|${{ github.sha }}|g" k8s/notification-service-deployment.yaml
+        kubectl apply -f k8s/notification-service-deployment.yaml
+        kubectl apply -f k8s/notification-service-service.yaml
+        kubectl apply -f k8s/notification-service-ingress.yaml
+
+    - name: Deploy RabbitMQ
+      run: |
+        kubectl apply -f k8s/rabbitmq-deployment.yaml
+        kubectl apply -f k8s/rabbitmq-service.yaml
+
+    - name: Wait for deployments
+      run: |
+        kubectl rollout status deployment/payment-service -n default --timeout=300s
+        kubectl rollout status deployment/notification-service -n default --timeout=300s
+        kubectl rollout status deployment/rabbitmq -n default --timeout=300s
+
+    - name: Run smoke tests
+      run: |
+        # Wait for services to be ready
+        kubectl wait --for=condition=available --timeout=300s deployment/payment-service
+        kubectl wait --for=condition=available --timeout=300s deployment/notification-service
+        
+        # Get service URLs
+        PAYMENT_SERVICE_URL=$(kubectl get service payment-service -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+        NOTIFICATION_SERVICE_URL=$(kubectl get service notification-service -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+        
+        # Run basic health checks
+        curl -f http://$PAYMENT_SERVICE_URL/health || exit 1
+        curl -f http://$NOTIFICATION_SERVICE_URL/health || exit 1
+
+  security-scan:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    needs: [build-and-push-images]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Run Trivy vulnerability scanner
+      uses: aquasecurity/trivy-action@master
+      with:
+        image-ref: '${{ env.AZURE_CONTAINER_REGISTRY }}/${{ env.CONTAINER_NAME_PAYMENT }}:${{ github.sha }}'
+        format: 'sarif'
+        output: 'trivy-results.sarif'
+
+    - name: Upload Trivy scan results to GitHub Security tab
+      uses: github/codeql-action/upload-sarif@v2
+      with:
+        sarif_file: 'trivy-results.sarif'
+
+  cleanup:
+    name: Cleanup
+    runs-on: ubuntu-latest
+    needs: [deploy-to-aks]
+    if: always() && github.ref == 'refs/heads/main' && github.event_name == 'push'
+    
+    steps:
+    - name: Azure Login
+      uses: azure/login@v1
+      with:
+        creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+    - name: Cleanup old container images
+      run: |
+        # Keep only the latest 10 images
+        az acr repository show-tags --name ${{ env.AZURE_CONTAINER_REGISTRY }} --repository ${{ env.CONTAINER_NAME_PAYMENT }} --orderby time_desc --query '[10:].name' -o tsv | xargs -I {} az acr repository delete --name ${{ env.AZURE_CONTAINER_REGISTRY }} --image ${{ env.CONTAINER_NAME_PAYMENT }}:{} --yes
+        az acr repository show-tags --name ${{ env.AZURE_CONTAINER_REGISTRY }} --repository ${{ env.CONTAINER_NAME_NOTIFICATION }} --orderby time_desc --query '[10:].name' -o tsv | xargs -I {} az acr repository delete --name ${{ env.AZURE_CONTAINER_REGISTRY }} --image ${{ env.CONTAINER_NAME_NOTIFICATION }}:{} --yes
+

@@ -1,0 +1,58 @@
+<?xml version="1.0"?>
+<doc>
+    <assembly>
+        <name>PaymentService</name>
+    </assembly>
+    <members>
+        <member name="T:PaymentService.Controllers.DemoController">
+            <summary>
+            Demo Controller for testing API endpoints
+            </summary>
+        </member>
+        <member name="M:PaymentService.Controllers.DemoController.GetAccounts">
+            <summary>
+            Get demo accounts
+            </summary>
+            <returns>List of demo accounts</returns>
+            <response code="200">Returns the list of accounts</response>
+        </member>
+        <member name="M:PaymentService.Controllers.DemoController.GetTransactions">
+            <summary>
+            Get demo transactions
+            </summary>
+            <returns>List of demo transactions</returns>
+            <response code="200">Returns the list of transactions</response>
+        </member>
+        <member name="M:PaymentService.Controllers.DemoController.TransferMoney(PaymentService.Controllers.DemoTransferRequest)">
+            <summary>
+            Transfer money between accounts (Demo)
+            </summary>
+            <param name="request">Transfer request</param>
+            <returns>Transfer result</returns>
+            <response code="200">Transfer completed successfully</response>
+            <response code="400">Invalid request</response>
+        </member>
+        <member name="M:PaymentService.Controllers.DemoController.GetHealth">
+            <summary>
+            Get system health status
+            </summary>
+            <returns>Health status</returns>
+            <response code="200">System is healthy</response>
+        </member>
+        <member name="T:PaymentService.Controllers.PaymentController">
+            <summary>
+            Payment Controller for managing money transfers and payment operations
+            </summary>
+        </member>
+        <member name="M:PaymentService.Controllers.PaymentController.TransferMoney(Shared.Domain.Commands.TransferMoneyCommand)">
+            <summary>
+            Transfer money between accounts
+            </summary>
+            <param name="command">Transfer money command containing from/to account IDs, amount, and currency</param>
+            <returns>Transfer result with success status and transaction ID</returns>
+            <response code="200">Transfer completed successfully</response>
+            <response code="400">Invalid request or insufficient funds</response>
+            <response code="500">Internal server error</response>
+        </member>
+    </members>
+</doc>

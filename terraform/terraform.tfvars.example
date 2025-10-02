@@ -1,0 +1,24 @@
+# Azure Configuration
+location = "East US"
+environment = "dev"
+project_name = "cicd-azure"
+
+# AKS Configuration
+aks_node_count = 2
+aks_vm_size = "Standard_D2s_v3"
+
+# PostgreSQL Configuration
+postgres_sku = "GP_Standard_D2s_v3"
+postgres_storage_mb = 32768
+backup_retention_days = 7
+
+# Logging Configuration
+log_retention_days = 30
+
+# Additional Tags
+tags = {
+  Owner = "DevOps Team"
+  CostCenter = "Engineering"
+  Project = "Microservices Platform"
+}
+

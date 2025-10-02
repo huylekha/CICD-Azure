@@ -1,0 +1,24 @@
+# Azure Student Account Configuration - TIẾT KIỆM TỐI ĐA
+location = "East US"
+environment = "dev"
+project_name = "cicd-azure-student"
+
+# AKS Configuration - Sử dụng node nhỏ nhất
+aks_node_count = 1  # Chỉ 1 node để tiết kiệm
+aks_vm_size = "Standard_B2s"  # VM nhỏ nhất có thể
+
+# PostgreSQL Configuration - Tier thấp nhất
+postgres_sku = "B_Standard_B1ms"  # Burstable tier, rẻ nhất
+postgres_storage_mb = 32768  # 32GB minimum
+backup_retention_days = 7
+
+# Logging Configuration
+log_retention_days = 7  # Giảm retention để tiết kiệm
+
+# Tags để track cost
+tags = {
+  Owner = "Student"
+  CostCenter = "Demo"
+  Project = "Microservices Demo"
+  Environment = "Development"
+}

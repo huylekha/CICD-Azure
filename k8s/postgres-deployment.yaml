@@ -1,0 +1,130 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres
+  labels:
+    app: postgres
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      containers:
+      - name: postgres
+        image: postgres:15
+        ports:
+        - containerPort: 5432
+        env:
+        - name: POSTGRES_DB
+          value: "microservices"
+        - name: POSTGRES_USER
+          value: "postgresadmin"
+        - name: POSTGRES_PASSWORD
+          value: "admin123"
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        volumeMounts:
+        - name: postgres-storage
+          mountPath: /var/lib/postgresql/data
+        - name: init-script
+          mountPath: /docker-entrypoint-initdb.d
+      volumes:
+      - name: postgres-storage
+        emptyDir: {}
+      - name: init-script
+        configMap:
+          name: postgres-init-script
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+spec:
+  selector:
+    app: postgres
+  ports:
+  - protocol: TCP
+    port: 5432
+    targetPort: 5432
+  type: ClusterIP
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-init-script
+data:
+  init-db.sql: |
+    -- Initialize database with sample data
+    CREATE TABLE IF NOT EXISTS "Accounts" (
+        "Id" uuid PRIMARY KEY,
+        "AccountNumber" varchar(50) NOT NULL UNIQUE,
+        "AccountHolderName" varchar(100) NOT NULL,
+        "Balance" decimal(18,2) NOT NULL,
+        "Currency" varchar(3) NOT NULL DEFAULT 'USD',
+        "IsActive" boolean NOT NULL DEFAULT true,
+        "CreatedAt" timestamp NOT NULL DEFAULT NOW(),
+        "UpdatedAt" timestamp NOT NULL DEFAULT NOW(),
+        "Version" varchar(50) NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS "Transactions" (
+        "Id" uuid PRIMARY KEY,
+        "FromAccountId" uuid NOT NULL,
+        "ToAccountId" uuid NOT NULL,
+        "Amount" decimal(18,2) NOT NULL,
+        "Currency" varchar(3) NOT NULL DEFAULT 'USD',
+        "Description" varchar(500),
+        "Status" integer NOT NULL DEFAULT 0,
+        "Type" integer NOT NULL DEFAULT 0,
+        "CreatedAt" timestamp NOT NULL DEFAULT NOW(),
+        "CompletedAt" timestamp,
+        "FailedAt" timestamp,
+        "FailureReason" varchar(1000),
+        "CorrelationId" varchar(100)
+    );
+
+    CREATE TABLE IF NOT EXISTS "Notifications" (
+        "Id" uuid PRIMARY KEY,
+        "RecipientEmail" varchar(255),
+        "RecipientPhone" varchar(20),
+        "Subject" varchar(200) NOT NULL,
+        "Message" varchar(2000) NOT NULL,
+        "Type" integer NOT NULL,
+        "Priority" integer NOT NULL DEFAULT 1,
+        "Status" integer NOT NULL DEFAULT 0,
+        "CreatedAt" timestamp NOT NULL DEFAULT NOW(),
+        "SentAt" timestamp,
+        "FailedAt" timestamp,
+        "FailureReason" varchar(1000),
+        "CorrelationId" varchar(100)
+    );
+
+    -- Insert sample accounts
+    INSERT INTO "Accounts" ("Id", "AccountNumber", "AccountHolderName", "Balance", "Currency", "IsActive", "CreatedAt", "UpdatedAt", "Version")
+    VALUES 
+        ('550e8400-e29b-41d4-a716-446655440001', 'ACC001', 'John Doe', 5000.00, 'USD', true, NOW(), NOW(), 'v1'),
+        ('550e8400-e29b-41d4-a716-446655440002', 'ACC002', 'Jane Smith', 3000.00, 'USD', true, NOW(), NOW(), 'v1'),
+        ('550e8400-e29b-41d4-a716-446655440003', 'ACC003', 'Bob Johnson', 7500.00, 'USD', true, NOW(), NOW(), 'v1'),
+        ('550e8400-e29b-41d4-a716-446655440004', 'ACC004', 'Alice Brown', 1200.00, 'USD', false, NOW(), NOW(), 'v1'),
+        ('550e8400-e29b-41d4-a716-446655440005', 'ACC005', 'Charlie Wilson', 9800.00, 'USD', true, NOW(), NOW(), 'v1')
+    ON CONFLICT ("Id") DO NOTHING;
+
+    -- Insert sample transactions
+    INSERT INTO "Transactions" ("Id", "FromAccountId", "ToAccountId", "Amount", "Currency", "Description", "Status", "Type", "CreatedAt", "CompletedAt", "CorrelationId")
+    VALUES 
+        ('660e8400-e29b-41d4-a716-446655440001', '550e8400-e29b-41d4-a716-446655440001', '550e8400-e29b-41d4-a716-446655440002', 1000.00, 'USD', 'Payment for services', 2, 0, NOW() - INTERVAL '1 day', NOW() - INTERVAL '1 day', 'corr-001'),
+        ('660e8400-e29b-41d4-a716-446655440002', '550e8400-e29b-41d4-a716-446655440002', '550e8400-e29b-41d4-a716-446655440003', 500.00, 'USD', 'Monthly rent payment', 1, 0, NOW() - INTERVAL '2 hours', NULL, 'corr-002'),
+        ('660e8400-e29b-41d4-a716-446655440003', '550e8400-e29b-41d4-a716-446655440003', '550e8400-e29b-41d4-a716-446655440001', 2500.00, 'USD', 'Refund for cancelled order', 2, 3, NOW() - INTERVAL '3 hours', NOW() - INTERVAL '3 hours', 'corr-003'),
+        ('660e8400-e29b-41d4-a716-446655440004', '550e8400-e29b-41d4-a716-446655440004', '550e8400-e29b-41d4-a716-446655440005', 750.00, 'USD', 'Failed transfer - insufficient funds', 3, 0, NOW() - INTERVAL '4 hours', NULL, 'corr-004'),
+        ('660e8400-e29b-41d4-a716-446655440005', '550e8400-e29b-41d4-a716-446655440005', '550e8400-e29b-41d4-a716-446655440001', 2000.00, 'USD', 'Business payment', 5, 0, NOW() - INTERVAL '5 hours', NULL, 'corr-005')
+    ON CONFLICT ("Id") DO NOTHING;
